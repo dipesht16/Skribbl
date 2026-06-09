@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "523813854180",
+    "project_id": "scribble-7bcd4",
+    "storage_bucket": "scribble-7bcd4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:523813854180:android:d7386d8cae9cbc3f3705f1",
+        "android_client_info": {
+          "package_name": "com.example.skribble_io"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDpJjkCcO2ippZQyxxAXKqVhw2JInnTqHk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
