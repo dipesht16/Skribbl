@@ -2,36 +2,50 @@ import 'dart:math';
 
 class WordList {
   static const List<String> defaultWords = [
-    "house", "sun", "car", "tree", "flower", "smiley", "cloud", "star", "umbrella", "balloon",
-    "face", "apple", "banana", "cat", "dog", "elephant", "guitar", "jacket", "lemon", "monkey",
-    "notebook", "orange", "pencil", "rabbit", "sunflower", "telephone", "violin", "watermelon",
-    "airplane", "castle", "dolphin", "earth", "forest", "ghost", "helicopter", "island",
-    "jungle", "kangaroo", "lighthouse", "mountain", "ocean", "penguin", "rainbow", "spaceship",
-    "train", "volcano", "wizard", "pizza", "burger", "cookie", "cheese", "clock", "computer",
-    "keyboard", "hammer", "scissors", "screwdriver", "ladder", "window", "door", "chair",
-    "table", "bed", "sofa", "pillow", "blanket", "mirror", "candle", "bucket", "shovel",
-    "bicycle", "motorcycle", "truck", "tractor", "rocket", "submarine", "bridge", "tower",
-    "pyramid", "church", "hospital", "school", "library", "stadium", "market", "bakery",
-    "restaurant", "hotel", "cinema", "museum", "park", "garden", "beach", "desert", "cave",
-    "river", "lake", "waterfall", "moon", "rain", "snow", "wind", "thunder", "lightning",
-    "fire", "smoke", "gold", "silver", "diamond", "ring", "necklace", "crown", "sword",
-    "shield", "bow", "arrow", "axe", "helmet", "flag", "map", "compass", "key", "lock",
-    "chest", "coin", "wallet", "bag", "box", "bottle", "cup", "plate", "bowl", "fork",
-    "spoon", "knife", "pot", "pan", "oven", "fridge", "sink", "shower", "bath", "toilet",
-    "soap", "towel", "brush", "comb", "toothbrush", "glasses", "hat", "cap", "scarf",
-    "gloves", "coat", "shirt", "pants", "socks", "shoes", "boots", "belt", "tie", "backpack"
+    "actor", "airplane", "angry", "apple", "arm", "arrow", "artist", "axe", "backpack", "bag",
+    "bakery", "ball", "balloon", "banana", "baseball", "basketball", "bath", "beach", "bear", "bed",
+    "bee", "belt", "bicycle", "blanket", "boat", "book", "boots", "bored", "bottle", "bow",
+    "bowl", "bowling", "box", "boxing", "bracelet", "bread", "bridge", "broccoli", "brush", "bucket",
+    "burger", "bus", "butterfly", "cake", "camera", "candle", "cap", "car", "cards", "carrot",
+    "castle", "cat", "cave", "chair", "cheese", "chef", "chess", "chest", "chocolate", "church",
+    "cinema", "climbing", "clock", "cloud", "cloudy", "coat", "coffee", "coin", "comb", "compass",
+    "computer", "cookie", "cooking", "crown", "cry", "cup", "dancer", "dancing", "deer", "desert",
+    "diamond", "dice", "doctor", "dog", "dolphin", "donut", "door", "drawing", "dress", "drinking",
+    "driving", "drum", "eagle", "ear", "earring", "earth", "eating", "elephant", "engineer", "excited",
+    "eye", "face", "farmer", "finger", "fire", "firefighter", "fishing", "flag", "flamingo", "flower",
+    "flying", "fog", "foot", "forest", "fork", "fox", "fridge", "frog", "garden", "ghost",
+    "giraffe", "glasses", "gloves", "gold", "golf", "grape", "guitar", "hair", "hammer", "hand",
+    "happy", "hat", "head", "heart", "helicopter", "helmet", "hockey", "hopscotch", "hospital", "hotdog",
+    "hotel", "house", "ice cream", "island", "jacket", "juice", "jumping", "jungle", "kangaroo", "key",
+    "keyboard", "kite", "knife", "koala", "ladder", "lake", "lamp", "laugh", "leg", "lemon",
+    "library", "lighthouse", "lightning", "lion", "lock", "love", "map", "market", "milk", "mirror",
+    "monkey", "moon", "motorcycle", "mountain", "mouth", "museum", "musician", "necklace", "noodles", "nose",
+    "notebook", "nurse", "ocean", "octopus", "orange", "oven", "owl", "painting", "pan", "panda",
+    "pants", "park", "parrot", "pasta", "pen", "pencil", "penguin", "phone", "piano", "pillow",
+    "pilot", "pizza", "plane", "plate", "police", "popcorn", "pot", "purse", "pyramid", "rabbit",
+    "rain", "rainbow", "rainy", "reading", "restaurant", "ring", "river", "rocket", "running", "sad",
+    "sailing", "sandwich", "scared", "scarf", "school", "scientist", "scissors", "screwdriver", "seesaw", "shark",
+    "shield", "shirt", "shoe", "shoes", "shovel", "shadow", "shower", "sick", "silver", "singer", "singing",
+    "sink", "skateboard", "skating", "skiing", "skirt", "sleeping", "slide", "smile", "smiley", "smoke",
+    "snake", "snow", "snowy", "soap", "soccer", "socks", "soda", "sofa", "spaceship", "spider",
+    "spoon", "stadium", "star", "storm", "strawberry", "submarine", "sun", "sunflower", "sunny", "surfing",
+    "surprised", "sushi", "sweater", "swimming", "swing", "sword", "table", "taco", "tea", "teacher",
+    "telephone", "tennis", "thunder", "tie", "tiger", "tired", "toe", "toilet", "tomato", "tooth",
+    "toothbrush", "tornado", "towel", "tower", "toy", "tractor", "train", "tree", "truck", "trumpet",
+    "turtle", "umbrella", "violin", "volcano", "volleyball", "walking", "wallet", "waterfall", "watermelon", "wave",
+    "whale", "wind", "windmill", "window", "windy", "wink", "wizard", "wolf", "writing", "zebra"
   ];
 
   static final Random _random = Random();
 
-  /// Gets 3 random words for choice.
+  /// Gets 4 random words for choice.
   static List<String> getWordChoices([String customWords = '']) {
     List<String> pool = [...defaultWords];
     if (customWords.isNotEmpty) {
       final customList = customWords
           .split(',')
           .map((s) => s.trim().toLowerCase())
-          .where((s) => s.isNotEmpty)
+          .where((s) => s.isNotEmpty && s.length <= 12)
           .toList();
       if (customList.isNotEmpty) {
         pool.addAll(customList);
@@ -39,16 +53,12 @@ class WordList {
     }
 
     final Set<String> choices = {};
-    // Ensure we don't loop infinitely if pool is very small
-    while (choices.length < 3 && choices.length < pool.length) {
+    while (choices.length < 4 && choices.length < pool.length) {
       choices.add(pool[_random.nextInt(pool.length)]);
     }
 
-    // Fallback if we don't have 3
-    while (choices.length < 3) {
-      choices.add("apple");
-      choices.add("house");
-      choices.add("sun");
+    while (choices.length < 4) {
+      choices.addAll(["apple", "house", "sun", "car"].take(4 - choices.length));
     }
 
     return choices.toList();

@@ -25,9 +25,9 @@ class PlayerList extends StatelessWidget {
       return Container(
         height: 68,
         padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          border: const Border(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1E2833), // Dark charcoal-slate background
+          border: Border(
             bottom: BorderSide(color: Colors.black, width: 3.0),
           ),
         ),
@@ -35,28 +35,17 @@ class PlayerList extends StatelessWidget {
           scrollDirection: Axis.horizontal,
           itemCount: players.length,
           itemBuilder: (context, index) {
-            final player = players[index];
-            final rank = sortedPlayers.indexWhere((p) => p.id == player.id) + 1;
+            final player = sortedPlayers[index];
+            final rank = index + 1;
             final isDrawing = player.id == currentDrawerId;
             final hasGuessed = player.hasGuessed;
 
             // Determine card background color
-            Color cardBg = Colors.white;
+            Color cardBg = const Color(0xFF2C3E50); // Flat dark slate blue
             if (hasGuessed) {
-              cardBg = const Color(0xFFd4edda); // Soft green
+              cardBg = const Color(0xFF2E7D32); // Flat green
             } else if (isDrawing) {
-              cardBg = const Color(0xFFd1ecf1); // Soft blue
-            }
-
-            // Determine border color
-            Color borderColor = Colors.black;
-            double borderW = 1.5;
-            if (isDrawing) {
-              borderColor = const Color(0xFF0c5460); // Darker blue
-              borderW = 2.0;
-            } else if (hasGuessed) {
-              borderColor = const Color(0xFF155724); // Darker green
-              borderW = 2.0;
+              cardBg = const Color(0xFF1F69C9); // Flat blue
             }
 
             return Container(
@@ -66,14 +55,7 @@ class PlayerList extends StatelessWidget {
               decoration: BoxDecoration(
                 color: cardBg,
                 borderRadius: BorderRadius.circular(8.0),
-                border: Border.all(color: borderColor, width: borderW),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black,
-                    offset: Offset(0, 1.5),
-                    blurRadius: 0,
-                  )
-                ],
+                border: Border.all(color: Colors.black, width: 2.0),
               ),
               child: Row(
                 children: [
@@ -94,7 +76,7 @@ class PlayerList extends StatelessWidget {
                           style: GoogleFonts.fredoka(
                             fontWeight: FontWeight.w900,
                             fontSize: 11,
-                            color: isDrawing ? Colors.blue.shade900 : Colors.black,
+                            color: Colors.white,
                           ),
                         ),
                         Text(
@@ -102,7 +84,7 @@ class PlayerList extends StatelessWidget {
                           style: GoogleFonts.fredoka(
                             fontWeight: FontWeight.w600,
                             fontSize: 9,
-                            color: Colors.grey.shade600,
+                            color: Colors.white70,
                           ),
                         ),
                       ],
@@ -117,13 +99,13 @@ class PlayerList extends StatelessWidget {
                       style: GoogleFonts.fredoka(
                         fontWeight: FontWeight.w900,
                         fontSize: 10,
-                        color: Colors.green.shade700,
+                        color: const Color(0xFF7ED321),
                       ),
                     )
                   else if (isDrawing)
-                    const Icon(Icons.edit, size: 14, color: Colors.blue)
+                    const Icon(Icons.edit, size: 12, color: Colors.white)
                   else if (hasGuessed)
-                    const Icon(Icons.thumb_up, size: 14, color: Colors.green),
+                    const Icon(Icons.check_circle, size: 12, color: Color(0xFF7ED321)),
                 ],
               ),
             );
@@ -134,7 +116,7 @@ class PlayerList extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: const Color(0xFF1E2833), // Dark charcoal-slate background
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.black, width: 3.0),
       ),
@@ -142,28 +124,17 @@ class PlayerList extends StatelessWidget {
         padding: const EdgeInsets.all(8.0),
         itemCount: players.length,
         itemBuilder: (context, index) {
-          final player = players[index];
-          final rank = sortedPlayers.indexWhere((p) => p.id == player.id) + 1;
+          final player = sortedPlayers[index];
+          final rank = index + 1;
           final isDrawing = player.id == currentDrawerId;
           final hasGuessed = player.hasGuessed;
 
           // Determine card background color
-          Color cardBg = Colors.white;
+          Color cardBg = const Color(0xFF2C3E50); // Flat dark slate blue
           if (hasGuessed) {
-            cardBg = const Color(0xFFd4edda); // Soft green
+            cardBg = const Color(0xFF2E7D32); // Flat green
           } else if (isDrawing) {
-            cardBg = const Color(0xFFd1ecf1); // Soft blue
-          }
-
-          // Determine border color
-          Color borderColor = Colors.black;
-          double borderW = 2.0;
-          if (isDrawing) {
-            borderColor = const Color(0xFF0c5460); // Darker blue
-            borderW = 3.0;
-          } else if (hasGuessed) {
-            borderColor = const Color(0xFF155724); // Darker green
-            borderW = 3.0;
+            cardBg = const Color(0xFF1F69C9); // Flat blue
           }
 
           return Container(
@@ -172,14 +143,7 @@ class PlayerList extends StatelessWidget {
             decoration: BoxDecoration(
               color: cardBg,
               borderRadius: BorderRadius.circular(8.0),
-              border: Border.all(color: borderColor, width: borderW),
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black,
-                  offset: Offset(0, 2),
-                  blurRadius: 0,
-                )
-              ],
+              border: Border.all(color: Colors.black, width: 2.0),
             ),
             child: Row(
               children: [
@@ -192,7 +156,7 @@ class PlayerList extends StatelessWidget {
                     style: GoogleFonts.fredoka(
                       fontWeight: FontWeight.w900,
                       fontSize: 14,
-                      color: Colors.grey.shade700,
+                      color: Colors.white70,
                     ),
                   ),
                 ),
@@ -213,7 +177,7 @@ class PlayerList extends StatelessWidget {
                         style: GoogleFonts.fredoka(
                           fontWeight: FontWeight.w900,
                           fontSize: 14,
-                          color: isDrawing ? Colors.blue.shade900 : Colors.black,
+                          color: Colors.white,
                         ),
                       ),
                       Text(
@@ -221,7 +185,7 @@ class PlayerList extends StatelessWidget {
                         style: GoogleFonts.fredoka(
                           fontWeight: FontWeight.w600,
                           fontSize: 11,
-                          color: Colors.grey.shade600,
+                          color: Colors.white60,
                         ),
                       ),
                     ],
@@ -237,15 +201,15 @@ class PlayerList extends StatelessWidget {
                       style: GoogleFonts.fredoka(
                         fontWeight: FontWeight.w900,
                         fontSize: 13,
-                        color: Colors.green.shade700,
+                        color: const Color(0xFF7ED321),
                       ),
                     ),
                   ),
 
                 if (isDrawing)
-                  const Icon(Icons.edit, size: 18, color: Colors.blue)
+                  const Icon(Icons.edit, size: 18, color: Colors.white)
                 else if (hasGuessed)
-                  const Icon(Icons.thumb_up, size: 18, color: Colors.green),
+                  const Icon(Icons.check_circle, size: 18, color: Color(0xFF7ED321)),
               ],
             ),
           );

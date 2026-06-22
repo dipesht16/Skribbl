@@ -9,6 +9,9 @@ import '../widgets/avatar_renderer.dart';
 import '../widgets/chat_panel.dart';
 import '../widgets/drawing_canvas.dart';
 import '../widgets/player_list.dart';
+import '../widgets/floating_chat_overlay.dart';
+import '../models/floating_chat_message.dart';
+import '../models/chat_message.dart';
 
 class GameScreen extends StatefulWidget {
   final GameStateController controller;
@@ -27,10 +30,79 @@ class GameScreen extends StatefulWidget {
 }
 
 class _GameScreenState extends State<GameScreen> {
+  final GlobalKey<FloatingChatOverlayState> _floatingChatKey = GlobalKey<FloatingChatOverlayState>();
+  int _lastMessageCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastMessageCount = widget.controller.chatMessages.length;
+    widget.controller.addListener(_onControllerChangedInGame);
+  }
+
   @override
   void dispose() {
+    widget.controller.removeListener(_onControllerChangedInGame);
     widget.controller.cleanupFirebase();
     super.dispose();
+  }
+
+  void _onControllerChangedInGame() {
+    if (!mounted) return;
+    if (widget.controller.roomDeleted) {
+      widget.controller.removeListener(_onControllerChangedInGame);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Host closed the game.')),
+      );
+      Navigator.of(context).pop();
+      return;
+    }
+    final currentCount = widget.controller.chatMessages.length;
+    if (currentCount > _lastMessageCount) {
+      for (int i = _lastMessageCount; i < currentCount; i++) {
+        final msg = widget.controller.chatMessages[i];
+        
+        final isCorrect = msg.type == ChatMessageType.correct;
+        final isCorrectChat = msg.type == ChatMessageType.correctGuesserChat;
+        final isSystem = msg.type == ChatMessageType.system;
+        final isLike = msg.type == ChatMessageType.like;
+        final isDislike = msg.type == ChatMessageType.dislike;
+        final isWarning = msg.type == ChatMessageType.close;
+
+        Color playerColor = Colors.black;
+        final playerIdx = widget.controller.players.indexWhere((p) => p.name == msg.senderName);
+        if (playerIdx != -1) {
+          const colors = [
+            Color(0xFFE74C3C),
+            Color(0xFF3498DB),
+            Color(0xFF2ECC71),
+            Color(0xFFF39C12),
+            Color(0xFF9B59B6),
+            Color(0xFF1ABC9C),
+          ];
+          playerColor = colors[playerIdx % colors.length];
+        }
+
+        _floatingChatKey.currentState?.addMessage(
+          FloatingChatMessage(
+            id: msg.id,
+            playerName: msg.senderName,
+            message: msg.text,
+            playerColor: playerColor,
+            isCorrectGuess: isCorrect,
+            isCorrectGuesserChat: isCorrectChat,
+            isSystemMessage: isSystem,
+            isLike: isLike,
+            isDislike: isDislike,
+            isWarningMessage: isWarning,
+            timestamp: DateTime.now(),
+          )
+        );
+      }
+      _lastMessageCount = currentCount;
+    } else if (currentCount < _lastMessageCount) {
+      _lastMessageCount = currentCount;
+    }
   }
 
   void _onPointAdded(DrawPoint point) {
@@ -65,58 +137,79 @@ class _GameScreenState extends State<GameScreen> {
         final isInputActive = !isMyTurn && !hasGuessed && room.status == GameStatus.drawing;
         
         final mediaQuery = MediaQuery.of(context);
-        final bool isPortrait = mediaQuery.size.width < 600;
+        final bool isPortrait = mediaQuery.size.width < mediaQuery.size.height;
 
         Widget mainLayout;
 
         if (isPortrait) {
-          mainLayout = Column(
-            children: [
-              PlayerList(
-                players: players,
-                currentDrawerId: room.currentDrawerId,
-                isHorizontal: true,
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(4.0),
-                  child: Stack(
+          mainLayout = Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(4.0),
+              child: Stack(
+                children: [
+                  Column(
                     children: [
-                      Column(
-                        children: [
-                          Expanded(
-                            flex: 6,
-                            child: DrawingCanvas(
-                              points: widget.controller.drawingPoints,
-                              isDrawingEnabled: isMyTurn && room.status == GameStatus.drawing,
-                              onPointAdded: _onPointAdded,
-                              onClear: _onClear,
+                      Expanded(
+                        flex: 6,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: DrawingCanvas(
+                                points: widget.controller.drawingPoints,
+                                isDrawingEnabled: isMyTurn && room.status == GameStatus.drawing,
+                                onPointAdded: _onPointAdded,
+                                onClear: _onClear,
+                                onReaction: !isMyTurn && room.status == GameStatus.drawing
+                                    ? (isLike) => widget.controller.submitReaction(widget.controller.localPlayer.id, isLike)
+                                    : null,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Expanded(
-                            flex: 4,
-                            child: ChatPanel(
-                              messages: chat,
-                              onMessageSubmitted: _onGuessSubmitted,
-                              isInputEnabled: isInputActive,
-                              placeholder: isMyTurn ? 'You are drawing! Type here to chat...' : 'Type your guess here...',
+                            Positioned(
+                              right: 12,
+                              bottom: 12,
+                              child: FloatingChatOverlay(
+                                key: _floatingChatKey,
+                                maxVisibleMessages: 3,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                      // Overlays inside the content area
-                      if (room.status == GameStatus.choosing)
-                        _buildWordSelectionOverlay(room, isMyTurn),
-                      if (room.status == GameStatus.roundEnd)
-                        _buildRoundEndOverlay(room),
-                      if (room.status == GameStatus.gameEnd)
-                        _buildGameEndPodium(players),
+                      const SizedBox(height: 4),
+                      Expanded(
+                        flex: 4,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: PlayerList(
+                                players: players,
+                                currentDrawerId: room.currentDrawerId,
+                                isHorizontal: false,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: ChatPanel(
+                                messages: chat,
+                                onSendMessage: _onGuessSubmitted,
+                                isDrawing: !isInputActive,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
-                ),
+                  // Overlays inside the content area
+                  if (room.status == GameStatus.choosing)
+                    _buildWordSelectionOverlay(room, isMyTurn),
+                  if (room.status == GameStatus.roundEnd)
+                    _buildRoundEndOverlay(room),
+                  if (room.status == GameStatus.gameEnd)
+                    _buildGameEndPodium(players),
+                ],
               ),
-            ],
+            ),
           );
         } else {
           // Horizontal side-by-side layout
@@ -141,11 +234,24 @@ class _GameScreenState extends State<GameScreen> {
                     flex: 7,
                     child: Stack(
                       children: [
-                        DrawingCanvas(
-                          points: widget.controller.drawingPoints,
-                          isDrawingEnabled: isMyTurn && room.status == GameStatus.drawing,
-                          onPointAdded: _onPointAdded,
-                          onClear: _onClear,
+                        Positioned.fill(
+                          child: DrawingCanvas(
+                            points: widget.controller.drawingPoints,
+                            isDrawingEnabled: isMyTurn && room.status == GameStatus.drawing,
+                            onPointAdded: _onPointAdded,
+                            onClear: _onClear,
+                            onReaction: !isMyTurn && room.status == GameStatus.drawing
+                                ? (isLike) => widget.controller.submitReaction(widget.controller.localPlayer.id, isLike)
+                                : null,
+                          ),
+                        ),
+                        Positioned(
+                          right: 12,
+                          bottom: 12,
+                          child: FloatingChatOverlay(
+                            key: _floatingChatKey,
+                            maxVisibleMessages: 3,
+                          ),
                         ),
                         if (room.status == GameStatus.choosing)
                           _buildWordSelectionOverlay(room, isMyTurn),
@@ -163,9 +269,8 @@ class _GameScreenState extends State<GameScreen> {
                     flex: 4,
                     child: ChatPanel(
                       messages: chat,
-                      onMessageSubmitted: _onGuessSubmitted,
-                      isInputEnabled: isInputActive,
-                      placeholder: isMyTurn ? 'You are drawing! Type here to chat...' : 'Type your guess here...',
+                      onSendMessage: _onGuessSubmitted,
+                      isDrawing: !isInputActive,
                     ),
                   ),
                 ],
@@ -177,16 +282,17 @@ class _GameScreenState extends State<GameScreen> {
         return Scaffold(
           backgroundColor: const Color(0xFF1c2630), // Dark background for contrast
           body: SafeArea(
+            top: false,
+            bottom: false,
+            left: false,
+            right: false,
             child: Column(
               children: [
                 // 1. TOP STATUS PANEL
                 _buildTopBar(room, players, isMyTurn),
 
                 // 2. MAIN LAYOUT
-                if (isPortrait)
-                  Expanded(child: mainLayout)
-                else
-                  mainLayout,
+                mainLayout,
               ],
             ),
           ),
@@ -199,7 +305,7 @@ class _GameScreenState extends State<GameScreen> {
 
   Widget _buildTopBar(GameRoom room, List<Player> players, bool isMyTurn) {
     final drawer = players.firstWhere((p) => p.id == room.currentDrawerId, orElse: () => Player(id: '', name: 'Someone', avatar: Avatar.random()));
-    
+
     String statusText = '';
     if (room.status == GameStatus.choosing) {
       statusText = isMyTurn ? 'CHOOSE A WORD!' : '${drawer.name} is choosing...';
@@ -211,163 +317,132 @@ class _GameScreenState extends State<GameScreen> {
       statusText = 'GAME OVER!';
     }
 
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isSmall = screenWidth < 500;
-
-    if (isSmall) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(
-            bottom: BorderSide(color: Colors.black, width: 3.0),
-          ),
-        ),
-        child: SafeArea(
-          bottom: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: room.timeRemaining <= 10 ? Colors.red.shade100 : Colors.blue.shade50,
-                      border: Border.all(color: Colors.black, width: 2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      '${room.timeRemaining}',
-                      style: GoogleFonts.fredoka(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14,
-                        color: room.timeRemaining <= 10 ? Colors.red.shade900 : Colors.black,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          statusText,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.fredoka(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 13,
-                            color: Colors.black,
-                          ),
-                        ),
-                        Text(
-                          'ROUND ${room.currentRound} OF ${room.rounds}',
-                          style: GoogleFonts.fredoka(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 10,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              if (room.status == GameStatus.drawing) ...[
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.black, width: 2.0),
-                  ),
-                  child: Text(
-                    isMyTurn ? room.currentWord.toUpperCase() : room.currentHint,
-                    style: GoogleFonts.fredoka(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                      letterSpacing: 2.0,
-                      color: isMyTurn ? Colors.green.shade800 : Colors.black,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      );
-    }
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(
-          bottom: BorderSide(color: Colors.black, width: 4.0),
+          bottom: BorderSide(color: Colors.black, width: 3.0),
         ),
       ),
       child: SafeArea(
+        top: false,
         bottom: false,
         child: Row(
           children: [
-            Container(
-              width: 50,
-              height: 50,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: room.timeRemaining <= 10 ? Colors.red.shade100 : Colors.blue.shade50,
-                border: Border.all(color: Colors.black, width: 3),
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                '${room.timeRemaining}',
-                style: GoogleFonts.fredoka(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18,
-                  color: room.timeRemaining <= 10 ? Colors.red.shade900 : Colors.black,
-                ),
-              ),
-            ),
-            const SizedBox(width: 16),
+            // Left: Timer circle on top, Round text below
             Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'ROUND ${room.currentRound} OF ${room.rounds}',
-                  style: GoogleFonts.fredoka(fontWeight: FontWeight.w900, fontSize: 13, color: Colors.grey.shade600),
+                Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: const Color(0xFF1c2630), width: 3),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '${room.timeRemaining}',
+                    style: GoogleFonts.fredoka(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                      color: room.timeRemaining <= 10 ? Colors.red.shade900 : const Color(0xFF1c2630),
+                    ),
+                  ),
                 ),
+                const SizedBox(height: 4),
                 Text(
-                  statusText,
-                  style: GoogleFonts.fredoka(fontWeight: FontWeight.w900, fontSize: 16, color: Colors.black),
+                  'Round ${room.currentRound} of ${room.rounds}',
+                  style: GoogleFonts.fredoka(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
+                    color: Colors.grey.shade600,
+                  ),
                 ),
               ],
             ),
-            const Spacer(),
-            if (room.status == GameStatus.drawing)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.black, width: 2.5),
-                ),
-                child: Text(
-                  isMyTurn ? room.currentWord.toUpperCase() : room.currentHint,
-                  style: GoogleFonts.fredoka(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 22,
-                    letterSpacing: 2.0,
-                    color: isMyTurn ? Colors.green.shade800 : Colors.black,
+            
+            // Center: DRAW THIS / GUESS THIS instructions (wrapped in Expanded to prevent overflow)
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    room.status == GameStatus.choosing
+                        ? 'CHOOSING...'
+                        : (isMyTurn ? 'DRAW THIS' : 'GUESS THIS'),
+                    style: GoogleFonts.fredoka(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                      color: Colors.grey.shade500,
+                      letterSpacing: 1.0,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                ),
+                  const SizedBox(height: 4),
+                  if (room.status == GameStatus.drawing)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            isMyTurn ? room.currentWord.toUpperCase() : room.currentHint,
+                            style: GoogleFonts.fredoka(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 20,
+                              letterSpacing: 2.0,
+                              color: isMyTurn ? const Color(0xFF7ED321) : Colors.black,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        if (!isMyTurn && room.currentWord.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            '${room.currentWord.length}',
+                            style: GoogleFonts.fredoka(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    )
+                  else if (room.status == GameStatus.choosing)
+                    Text(
+                      isMyTurn ? 'SELECT A WORD' : '${drawer.name.toUpperCase()} IS CHOOSING',
+                      style: GoogleFonts.fredoka(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        color: Colors.black,
+                      ),
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    )
+                  else
+                    Text(
+                      statusText.toUpperCase(),
+                      style: GoogleFonts.fredoka(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        color: Colors.black,
+                      ),
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                ],
               ),
-            const Spacer(),
+            ),
+            
+            // Right offset of ~64px to account for the width of the timer column
+            const SizedBox(width: 64),
           ],
         ),
       ),
@@ -377,7 +452,7 @@ class _GameScreenState extends State<GameScreen> {
   Widget _buildWordSelectionOverlay(GameRoom room, bool isMyTurn) {
     if (!isMyTurn) {
       return Container(
-        color: Colors.black.withOpacity(0.6),
+        color: Colors.black.withValues(alpha: 0.6),
         alignment: Alignment.center,
         child: Container(
           padding: const EdgeInsets.all(24),
@@ -404,7 +479,7 @@ class _GameScreenState extends State<GameScreen> {
     }
 
     return Container(
-      color: Colors.black.withOpacity(0.6),
+      color: Colors.black.withValues(alpha: 0.6),
       alignment: Alignment.center,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 400),
@@ -427,7 +502,7 @@ class _GameScreenState extends State<GameScreen> {
             children: [
               Text(
                 'CHOOSE A WORD',
-                style: GoogleFonts.fredoka(fontWeight: FontWeight.w900, fontSize: 20, color: Colors.amber.shade900),
+                style: GoogleFonts.fredoka(fontWeight: FontWeight.w900, fontSize: 20, color: const Color(0xFFD35400)),
               ),
               const SizedBox(height: 20),
               ...room.wordChoices.map((word) {
@@ -439,7 +514,7 @@ class _GameScreenState extends State<GameScreen> {
                     child: ElevatedButton(
                       onPressed: () => _onWordSelected(word),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.amber,
+                        backgroundColor: Colors.white,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -466,8 +541,11 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _buildRoundEndOverlay(GameRoom room) {
+    final roundPlayers = [...widget.controller.players];
+    roundPlayers.sort((a, b) => b.lastTurnScore.compareTo(a.lastTurnScore));
+
     return Container(
-      color: Colors.black.withOpacity(0.7),
+      color: Colors.black.withValues(alpha: 0.7),
       alignment: Alignment.center,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 400),
@@ -500,7 +578,62 @@ class _GameScreenState extends State<GameScreen> {
                   letterSpacing: 1,
                 ),
               ),
-              const Divider(height: 24, thickness: 1.5),
+              const Divider(height: 20, thickness: 1.5),
+              Text(
+                'POINTS THIS ROUND',
+                style: GoogleFonts.fredoka(fontWeight: FontWeight.w900, fontSize: 13, color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 180),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  physics: const ClampingScrollPhysics(),
+                  itemCount: roundPlayers.length,
+                  itemBuilder: (context, index) {
+                    final player = roundPlayers[index];
+                    final pointsGained = player.lastTurnScore;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: pointsGained > 0 ? const Color(0xFFE8F5E9) : const Color(0xFFF1F3F5),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: pointsGained > 0 ? const Color(0xFF81C784) : Colors.grey.shade300,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          AvatarRenderer(avatar: player.avatar, size: 28, drawBorder: false),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              player.name,
+                              style: GoogleFonts.fredoka(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text(
+                            '+$pointsGained',
+                            style: GoogleFonts.fredoka(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              color: pointsGained > 0 ? Colors.green.shade800 : Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const Divider(height: 20, thickness: 1.5),
               Text(
                 'Next round starting in ${room.timeRemaining}s...',
                 style: GoogleFonts.fredoka(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey.shade500),
@@ -521,7 +654,7 @@ class _GameScreenState extends State<GameScreen> {
     final Player? third = topPlayers.length > 2 ? topPlayers[2] : null;
 
     return Container(
-      color: Colors.black.withOpacity(0.8),
+      color: Colors.black.withValues(alpha: 0.8),
       alignment: Alignment.center,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 480),
@@ -666,7 +799,7 @@ class _GameScreenState extends State<GameScreen> {
             style: GoogleFonts.fredoka(
               fontWeight: FontWeight.w900,
               fontSize: 22,
-              color: Colors.black.withOpacity(0.6),
+              color: Colors.black.withValues(alpha: 0.6),
             ),
           ),
         ),

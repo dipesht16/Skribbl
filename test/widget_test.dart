@@ -7,7 +7,6 @@ void main() {
     final controller = GameStateController();
     await tester.pumpWidget(MyApp(controller: controller));
 
-    // Verify that our app renders successfully
     expect(find.byType(MyApp), findsOneWidget);
   });
 }

@@ -5,8 +5,8 @@ import '../services/game_state_controller.dart';
 import '../widgets/avatar_customizer.dart';
 import '../widgets/skribbl_logo.dart';
 import 'lobby_screen.dart';
-import 'game_screen.dart';
 import '../services/firebase_game_service.dart';
+import '../main.dart';
 
 class LandingScreen extends StatefulWidget {
   final GameStateController controller;
@@ -21,14 +21,25 @@ class _LandingScreenState extends State<LandingScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _joinCodeController = TextEditingController();
   Avatar _selectedAvatar = Avatar.random();
-  String _selectedLanguage = 'English';
   final FirebaseGameService _firebaseService = FirebaseGameService();
+  bool _isConnectingFirebase = false;
 
   @override
   void initState() {
     super.initState();
     _nameController.text = widget.controller.localPlayer.name;
     _selectedAvatar = widget.controller.localPlayer.avatar;
+
+    // Deep-link: auto-fill room code from URL query parameter
+    try {
+      final uri = Uri.base;
+      final code = uri.queryParameters['code'];
+      if (code != null && code.isNotEmpty) {
+        _joinCodeController.text = code.toUpperCase();
+      }
+    } catch (_) {
+      // Ignore on non-web platforms where Uri.base may not work
+    }
   }
 
   @override
@@ -38,28 +49,32 @@ class _LandingScreenState extends State<LandingScreen> {
     super.dispose();
   }
 
-  void _onPlayPressed() {
+  void _onCreateRoomPressed() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
-    
-    // Update local player state
-    widget.controller.updateLocalPlayer(name, _selectedAvatar);
-    widget.controller.restartGame(); // Reset any past matches
-    
-    // Auto-populate 3 bots
-    widget.controller.startGame();
 
-    // Navigate to Game Screen
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => GameScreen(controller: widget.controller),
-      ),
-    );
-  }
+    setState(() {
+      _isConnectingFirebase = true;
+    });
 
-  void _onCreateRoomPressed() {
-    final name = _nameController.text.trim();
-    if (name.isEmpty) return;
+    try {
+      await firebaseInitFuture;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Firebase connection failed: $e')),
+        );
+      }
+      setState(() {
+        _isConnectingFirebase = false;
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isConnectingFirebase = false;
+    });
 
     widget.controller.updateLocalPlayer(name, _selectedAvatar);
     widget.controller.restartGame();
@@ -83,9 +98,32 @@ class _LandingScreenState extends State<LandingScreen> {
     final joinCode = _joinCodeController.text.trim().toUpperCase();
     if (name.isEmpty || joinCode.isEmpty) return;
 
+    setState(() {
+      _isConnectingFirebase = true;
+    });
+
+    try {
+      await firebaseInitFuture;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Firebase connection failed: $e')),
+        );
+      }
+      setState(() {
+        _isConnectingFirebase = false;
+      });
+      return;
+    }
+
+    if (!mounted) return;
+
     final exists = await _firebaseService.checkRoomExists(joinCode);
     if (!exists) {
       if (mounted) {
+        setState(() {
+          _isConnectingFirebase = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Room code "$joinCode" not found!')),
         );
@@ -95,11 +133,14 @@ class _LandingScreenState extends State<LandingScreen> {
 
     widget.controller.updateLocalPlayer(name, _selectedAvatar);
     final localPlayer = widget.controller.localPlayer;
-    await _firebaseService.joinPlayer(joinCode, localPlayer.id, localPlayer.toJson());
+    await _firebaseService.joinPlayer(joinCode, localPlayer.id, localPlayer.copyWith(isHost: false).toJson());
 
     widget.controller.initializeFirebaseJoiner(joinCode);
 
     if (mounted) {
+      setState(() {
+        _isConnectingFirebase = false;
+      });
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (context) => LobbyScreen(
@@ -128,6 +169,10 @@ class _LandingScreenState extends State<LandingScreen> {
           ),
         ),
         child: SafeArea(
+          top: false,
+          bottom: false,
+          left: false,
+          right: false,
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
           child: Center(
@@ -188,43 +233,6 @@ class _LandingScreenState extends State<LandingScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Language Dropdown
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.black, width: 3.0),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _selectedLanguage,
-                            isExpanded: true,
-                            icon: const Icon(Icons.arrow_drop_down, color: Colors.black),
-                            style: GoogleFonts.fredoka(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 16,
-                              color: Colors.black,
-                            ),
-                            items: <String>['English', 'German', 'Spanish', 'French', 'Italian']
-                                .map<DropdownMenuItem<String>>((String value) {
-                              return DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(value),
-                              );
-                            }).toList(),
-                            onChanged: (String? newValue) {
-                              if (newValue != null) {
-                                setState(() {
-                                  _selectedLanguage = newValue;
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
                       // Avatar customization
                       AvatarCustomizer(
                         avatar: _selectedAvatar,
@@ -237,40 +245,12 @@ class _LandingScreenState extends State<LandingScreen> {
                       const SizedBox(height: 20),
 
                       // Action Buttons
-                      // PLAY BUTTON
+                      // CREATE PRIVATE ROOM BUTTON
                       SizedBox(
                         width: double.infinity,
                         height: 52,
                         child: ElevatedButton(
-                          onPressed: _onPlayPressed,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF00cc00), // Vibrant green
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              side: const BorderSide(color: Colors.black, width: 3.5),
-                            ),
-                            shadowColor: Colors.transparent,
-                          ),
-                          child: Text(
-                            'PLAY!',
-                            style: GoogleFonts.fredoka(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 22,
-                              color: Colors.white,
-                              letterSpacing: 1.0,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // CREATE PRIVATE ROOM BUTTON
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: _onCreateRoomPressed,
+                          onPressed: _isConnectingFirebase ? null : _onCreateRoomPressed,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFFF7100), // Orange
                             elevation: 0,
@@ -279,14 +259,23 @@ class _LandingScreenState extends State<LandingScreen> {
                               side: const BorderSide(color: Colors.black, width: 3.5),
                             ),
                           ),
-                          child: Text(
-                            'Create Private Room',
-                            style: GoogleFonts.fredoka(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 16,
-                              color: Colors.white,
-                            ),
-                          ),
+                          child: _isConnectingFirebase
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 3,
+                                  ),
+                                )
+                              : Text(
+                                  'Create Private Room',
+                                  style: GoogleFonts.fredoka(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 20,
+                                    color: Colors.white,
+                                  ),
+                                ),
                         ),
                       ),
                     ],
@@ -335,7 +324,7 @@ class _LandingScreenState extends State<LandingScreen> {
                       ),
                       const SizedBox(width: 12),
                       ElevatedButton(
-                        onPressed: _onJoinRoomPressed,
+                        onPressed: _isConnectingFirebase ? null : _onJoinRoomPressed,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.blue.shade600,
                           elevation: 0,
@@ -345,62 +334,38 @@ class _LandingScreenState extends State<LandingScreen> {
                             side: const BorderSide(color: Colors.black, width: 2.5),
                           ),
                         ),
-                        child: Text(
-                          'JOIN LOBBY',
-                          style: GoogleFonts.fredoka(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 13,
-                          ),
-                        ),
+                        child: _isConnectingFirebase
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2.5,
+                                ),
+                              )
+                            : Text(
+                                'JOIN LOBBY',
+                                style: GoogleFonts.fredoka(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 13,
+                                ),
+                              ),
                       ),
                     ],
                   ),
                 ),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: 20),
 
-                // 4. HOW TO PLAY & INFO CARDS (Footer grid)
+                // 4. HOW TO PLAY CARD
                 Container(
-                  constraints: const BoxConstraints(maxWidth: 720),
-                  child: MediaQuery.of(context).size.width < 600
-                      ? Column(
-                          children: [
-                            _buildInfoCard(
-                              title: 'HOW TO PLAY',
-                              color: const Color(0xFF00B2FF), // Cyan
-                              content: 'When it is your turn to draw, choose a word from the choices and draw it on the whiteboard.\n\nWhen others are drawing, type your guesses in the chat box to gain points. The faster you guess, the more points you score!',
-                            ),
-                            const SizedBox(height: 16),
-                            _buildInfoCard(
-                              title: 'LATEST NEWS',
-                              color: const Color(0xFFFFB200), // Gold
-                              content: 'Welcome to Skribbl.io Flutter!\n\nThis app includes smart AI bots who draw and guess in the chat room. Play single player offline or host private rooms over local Wi-Fi to challenge your friends!',
-                            ),
-                          ],
-                        )
-                      : IntrinsicHeight(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Expanded(
-                                child: _buildInfoCard(
-                                  title: 'HOW TO PLAY',
-                                  color: const Color(0xFF00B2FF), // Cyan
-                                  content: 'When it is your turn to draw, choose a word from the choices and draw it on the whiteboard.\n\nWhen others are drawing, type your guesses in the chat box to gain points. The faster you guess, the more points you score!',
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: _buildInfoCard(
-                                  title: 'LATEST NEWS',
-                                  color: const Color(0xFFFFB200), // Gold
-                                  content: 'Welcome to Skribbl.io Flutter!\n\nThis app includes smart AI bots who draw and guess in the chat room. Play single player offline or host private rooms over local Wi-Fi to challenge your friends!',
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: _buildInfoCard(
+                    title: 'HOW TO PLAY',
+                    color: const Color(0xFF00B2FF), // Cyan
+                    content: 'When it is your turn to draw, choose a word from the choices and draw it on the whiteboard.\n\nWhen others are drawing, type your guesses in the chat box to gain points. The faster you guess, the more points you score!',
+                  ),
                 ),
                 const SizedBox(height: 40),
               ],
@@ -456,7 +421,7 @@ class _LandingScreenState extends State<LandingScreen> {
             style: GoogleFonts.fredoka(
               fontWeight: FontWeight.bold,
               fontSize: 12,
-              color: Colors.black.withOpacity(0.85),
+              color: Colors.black.withValues(alpha: 0.85),
               height: 1.3,
             ),
           ),

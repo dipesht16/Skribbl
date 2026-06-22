@@ -9,16 +9,20 @@ import '../models/player.dart';
 import 'bot_manager.dart';
 import 'word_list.dart';
 import 'firebase_game_service.dart';
+import 'points_service.dart';
+import 'package:uuid/uuid.dart';
 
 class GameStateController extends ChangeNotifier {
-  GameRoom _room = const GameRoom(id: 'local_room', hostId: 'player_1');
+  late GameRoom _room;
   List<Player> _players = [];
   List<DrawPoint> _drawingPoints = [];
   List<ChatMessage> _chatMessages = [];
-  Player _localPlayer = Player(id: 'player_1', name: 'Player', avatar: Avatar.random(), isHost: true);
+  late Player _localPlayer;
 
   Timer? _gameTimer;
   Timer? _botDrawTimer;
+  Timer? _drawingSyncTimer;
+  final List<DrawPoint> _drawingBuffer = [];
   int _currentDrawerIndex = 0;
   List<DrawPoint> _botPendingDrawing = [];
   int _botDrawIndex = 0;
@@ -26,12 +30,13 @@ class GameStateController extends ChangeNotifier {
 
   // For networking
   bool _isNetworkGame = false;
-  bool _isServer = false;
+  final bool _isServer = false;
 
   // Firebase integration
   bool _isFirebaseGame = false;
   bool _isHost = false;
   String? _roomCode;
+  bool _roomDeleted = false;
   final FirebaseGameService _firebaseService = FirebaseGameService();
 
   StreamSubscription? _roomSubscription;
@@ -39,8 +44,14 @@ class GameStateController extends ChangeNotifier {
   StreamSubscription? _drawingPointsAddedSubscription;
   StreamSubscription? _guessesSubscription;
   StreamSubscription? _wordSelectionSubscription;
+  StreamSubscription? _playersSubscription;
+  StreamSubscription? _chatSubscription;
 
   GameStateController() {
+    final uniqueId = 'player_${const Uuid().v4()}';
+    _localPlayer = Player(id: uniqueId, name: 'Player', avatar: Avatar.random(), isHost: true);
+    _room = GameRoom(id: 'local_room', hostId: uniqueId);
+
     // Start with a default set of players including the local player and some bots
     _players = [_localPlayer];
     _addBotInternal('DaVinci (Bot)');
@@ -59,6 +70,7 @@ class GameStateController extends ChangeNotifier {
   bool get isFirebaseGame => _isFirebaseGame;
   bool get isHost => _isHost;
   String? get roomCode => _roomCode;
+  bool get roomDeleted => _roomDeleted;
 
   // Local actions
   void updateLocalPlayer(String name, Avatar avatar) {
@@ -115,10 +127,15 @@ class GameStateController extends ChangeNotifier {
       addSystemMessage('Need at least 2 players to start.');
       return;
     }
+    
+    // Create random drawer order
+    final playerIds = _players.map((p) => p.id).toList()..shuffle(Random());
+    
     _room = _room.copyWith(
       status: GameStatus.choosing,
       currentRound: 1,
       timeRemaining: 15, // 15 seconds to choose a word
+      drawerOrder: playerIds,
     );
     _currentDrawerIndex = 0;
     _startChoosingPhase();
@@ -138,9 +155,26 @@ class GameStateController extends ChangeNotifier {
       );
     }
 
-    final drawer = _players[_currentDrawerIndex % _players.length];
+    String drawerId = '';
+    if (_room.drawerOrder.isNotEmpty) {
+      drawerId = _room.drawerOrder[_currentDrawerIndex % _room.drawerOrder.length];
+    }
+    
+    Player drawer;
+    final foundIndex = _players.indexWhere((p) => p.id == drawerId);
+    if (foundIndex != -1) {
+      drawer = _players[foundIndex];
+    } else {
+      drawer = _players[_currentDrawerIndex % _players.length];
+    }
+    
+    for (int i = 0; i < _players.length; i++) {
+      _players[i] = _players[i].copyWith(isDrawing: false);
+    }
     final drawerIdx = _players.indexWhere((p) => p.id == drawer.id);
-    _players[drawerIdx] = _players[drawerIdx].copyWith(isDrawing: true);
+    if (drawerIdx != -1) {
+      _players[drawerIdx] = _players[drawerIdx].copyWith(isDrawing: true);
+    }
 
     final choices = WordList.getWordChoices(_room.customWords);
     _room = _room.copyWith(
@@ -199,7 +233,11 @@ class GameStateController extends ChangeNotifier {
     }
 
     _cancelTimers();
-    final drawer = _players[_currentDrawerIndex % _players.length];
+    String drawerId = '';
+    if (_room.drawerOrder.isNotEmpty) {
+      drawerId = _room.drawerOrder[_currentDrawerIndex % _room.drawerOrder.length];
+    }
+    final drawer = _players.firstWhere((p) => p.id == drawerId, orElse: () => _players[_currentDrawerIndex % _players.length]);
 
     _room = _room.copyWith(
       status: GameStatus.drawing,
@@ -333,9 +371,14 @@ class GameStateController extends ChangeNotifier {
 
   void _endTurn() {
     _cancelTimers();
+    // Flush any pending drawing points batch if the method exists
+    try {
+      (this as dynamic)._flushDrawingBuffer();
+    } catch (_) {}
+
     _room = _room.copyWith(
       status: GameStatus.roundEnd,
-      timeRemaining: 6, // 6 seconds review phase
+      timeRemaining: 8, // 8 seconds review phase
     );
 
     // Score calculations
@@ -347,8 +390,11 @@ class GameStateController extends ChangeNotifier {
     if (drawerId != null && guessers.isNotEmpty) {
       final drawerIdx = _players.indexWhere((p) => p.id == drawerId);
       if (drawerIdx != -1) {
-        // Drawer gets points proportional to % of players who guessed
-        final drawerPoints = (200 * (guessers.length / totalGuessers)).round();
+        final drawerPoints = PointsService.calculateDrawerPoints(
+          correctGuessers: guessers.length,
+          firstGuessTime: 10, // Default estimate
+          totalPlayers: totalGuessers,
+        );
         final p = _players[drawerIdx];
         _players[drawerIdx] = p.copyWith(
           score: p.score + drawerPoints,
@@ -357,11 +403,21 @@ class GameStateController extends ChangeNotifier {
       }
     }
 
+    // 2. Reset streak and score increment for players who did not guess correctly
+    for (int i = 0; i < _players.length; i++) {
+      final p = _players[i];
+      if (p.id != drawerId) {
+        if (!p.hasGuessed) {
+          _players[i] = p.copyWith(streak: 0, lastTurnScore: 0);
+        }
+      }
+    }
+
     addSystemMessage('The word was: ${_room.currentWord.toUpperCase()}');
     notifyListeners();
     _syncToFirebase();
 
-    // Start 6s round review timer
+    // Start 8s round review timer
     _gameTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_room.status != GameStatus.roundEnd) {
         timer.cancel();
@@ -383,7 +439,8 @@ class GameStateController extends ChangeNotifier {
     _currentDrawerIndex++;
 
     // Check if round is finished (everyone has drawn)
-    if (_currentDrawerIndex >= _players.length) {
+    final totalDrawers = _room.drawerOrder.isNotEmpty ? _room.drawerOrder.length : _players.length;
+    if (_currentDrawerIndex >= totalDrawers) {
       _currentDrawerIndex = 0;
       final nextRound = _room.currentRound + 1;
       if (nextRound > _room.rounds) {
@@ -452,15 +509,31 @@ class GameStateController extends ChangeNotifier {
     if (_room.status != GameStatus.drawing) return;
     if (_room.currentDrawerId != _localPlayer.id) return; // Only drawer can draw
 
-    if (_isFirebaseGame && _roomCode != null) {
-      _firebaseService.addDrawingPoint(_roomCode!, point.toJson());
-      _drawingPoints.add(point);
-      notifyListeners();
-      return;
-    }
-
+    // Draw locally first for zero delay
     _drawingPoints.add(point);
     notifyListeners();
+
+    if (_isFirebaseGame && _roomCode != null) {
+      _drawingBuffer.add(point);
+      _startDrawingSyncTimer();
+    }
+  }
+
+  void _startDrawingSyncTimer() {
+    if (_drawingSyncTimer != null && _drawingSyncTimer!.isActive) return;
+    _drawingSyncTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      _flushDrawingBuffer();
+    });
+  }
+
+  void _flushDrawingBuffer() {
+    if (_drawingBuffer.isEmpty) return;
+    if (_roomCode == null) return;
+
+    final batch = _drawingBuffer.map((pt) => pt.toJson()).toList();
+    _drawingBuffer.clear();
+
+    _firebaseService.addDrawingPointsBatch(_roomCode!, batch);
   }
 
   void clearCanvas() {
@@ -494,6 +567,13 @@ class GameStateController extends ChangeNotifier {
     if (playerIdx == -1) return;
     final player = _players[playerIdx];
 
+    // Check if it is a reaction
+    if (guessText == '_reaction_like_' || guessText == '_reaction_dislike_') {
+      final isLike = guessText == '_reaction_like_';
+      addChatMessage(player.name, isLike ? 'liked the drawing!' : 'disliked the drawing!', isLike ? ChatMessageType.like : ChatMessageType.dislike);
+      return;
+    }
+
     if (playerId == _room.currentDrawerId) {
       // Drawer can't guess! It's just a normal message
       addChatMessage(player.name, guessText, ChatMessageType.chat);
@@ -511,25 +591,27 @@ class GameStateController extends ChangeNotifier {
 
     if (cleanGuess == cleanTarget) {
       // CORRECT GUESS!
-      // Calculate guess speed bonus points
-      final alreadyGuessedCount = _players.where((p) => p.hasGuessed).length;
-      int guessPoints = 100; // Base score
-      if (alreadyGuessedCount == 0) guessPoints = 300; // 1st
-      else if (alreadyGuessedCount == 1) guessPoints = 250; // 2nd
-      else if (alreadyGuessedCount == 2) guessPoints = 200; // 3rd
-      else if (alreadyGuessedCount == 3) guessPoints = 150; // 4th
+      final secondsElapsed = _room.drawTime - _room.timeRemaining;
+      final streak = player.streak + 1;
+      
+      final guessPoints = PointsService.calculateGuesserPoints(
+        secondsElapsed: secondsElapsed,
+        totalSeconds: _room.drawTime,
+        streak: streak,
+      );
 
       _players[playerIdx] = player.copyWith(
         hasGuessed: true,
         score: player.score + guessPoints,
         lastTurnScore: guessPoints,
+        streak: streak,
       );
 
       // System shows: "X has guessed the word!"
       addChatMessage(player.name, 'guessed the word!', ChatMessageType.correct);
       notifyListeners();
       _syncToFirebase();
-    } else if (WordList.isClose(cleanGuess, cleanTarget)) {
+    } else if (PointsService.isCloseGuess(cleanGuess, cleanTarget)) {
       // CLOSE GUESS!
       // Private message to that player, or system warning visible to that player
       addChatMessage(player.name, guessText, ChatMessageType.chat);
@@ -541,6 +623,22 @@ class GameStateController extends ChangeNotifier {
       // INCORRECT GUESS - normal chat message
       addChatMessage(player.name, guessText, ChatMessageType.chat);
     }
+  }
+
+  void submitReaction(String playerId, bool isLike) {
+    if (_room.status != GameStatus.drawing) return;
+
+    final text = isLike ? '_reaction_like_' : '_reaction_dislike_';
+    
+    if (_isFirebaseGame && !_isHost && _roomCode != null) {
+      _firebaseService.roomRef(_roomCode!).child('guesses').push().set({
+        'playerId': playerId,
+        'text': text,
+      });
+      return;
+    }
+    
+    submitGuess(playerId, text);
   }
 
   void addChatMessage(String sender, String text, ChatMessageType type) {
@@ -641,16 +739,67 @@ class GameStateController extends ChangeNotifier {
 
       _roomSubscription = _firebaseService.roomRef(code)
           .child('players')
-          .onChildAdded
+          .onValue
           .listen((event) {
             final val = event.snapshot.value;
             if (val != null) {
-              final newPlayer = Player.fromJson(Map<String, dynamic>.from(val as Map));
-              if (!_players.any((p) => p.id == newPlayer.id)) {
-                _players.add(newPlayer);
-                addSystemMessage('${newPlayer.name} joined the lobby.');
-                _syncToFirebase();
+              final playersMap = Map<String, dynamic>.from(val as Map);
+              final List<Player> updatedPlayers = [];
+              playersMap.forEach((key, value) {
+                updatedPlayers.add(Player.fromJson(Map<String, dynamic>.from(value as Map)));
+              });
+
+              // Check if any player joined/left to post system messages
+              for (final p in updatedPlayers) {
+                if (!_players.any((oldP) => oldP.id == p.id)) {
+                  addSystemMessage('${p.name} joined the lobby.');
+                }
               }
+              for (final oldP in _players) {
+                if (!updatedPlayers.any((p) => p.id == oldP.id)) {
+                  addSystemMessage('${oldP.name} left the lobby.');
+                }
+              }
+
+              _players = updatedPlayers;
+              notifyListeners();
+              _syncToFirebase();
+            }
+          });
+
+      // Listen to drawing cleared signals
+      _drawingPointsSubscription = _firebaseService.roomRef(code)
+          .child('drawingPoints')
+          .onValue
+          .listen((event) {
+            if (event.snapshot.value == null) {
+              _drawingPoints.clear();
+              notifyListeners();
+            }
+          });
+
+      // Listen to drawing additions
+      _drawingPointsAddedSubscription = _firebaseService.roomRef(code)
+          .child('drawingPoints')
+          .onChildAdded
+          .listen((event) {
+            if (_room.currentDrawerId == _localPlayer.id) {
+              return;
+            }
+            final val = event.snapshot.value;
+            if (val != null) {
+              if (val is List) {
+                for (final item in val) {
+                  if (item != null) {
+                    final point = DrawPoint.fromJson(Map<String, dynamic>.from(item as Map));
+                    _drawingPoints.add(point);
+                  }
+                }
+              } else {
+                final point = DrawPoint.fromJson(Map<String, dynamic>.from(val as Map));
+                _drawingPoints.add(point);
+              }
+              notifyListeners();
             }
           });
     });
@@ -668,37 +817,53 @@ class GameStateController extends ChangeNotifier {
     _drawingPoints = [];
 
     _roomSubscription = _firebaseService.roomRef(code)
+        .child('room')
         .onValue
         .listen((event) {
           final val = event.snapshot.value;
           if (val != null) {
-            final map = Map<String, dynamic>.from(val as Map);
-
-            if (map.containsKey('room')) {
-              _room = GameRoom.fromJson(Map<String, dynamic>.from(map['room'] as Map));
-            }
-
-            if (map.containsKey('players')) {
-              final playersMap = Map<String, dynamic>.from(map['players'] as Map);
-              _players = playersMap.values.map((p) {
-                return Player.fromJson(Map<String, dynamic>.from(p as Map));
-              }).toList();
-            }
-
-            if (map.containsKey('chatMessages')) {
-              final chatMap = Map<String, dynamic>.from(map['chatMessages'] as Map);
-              final List<ChatMessage> syncedChat = [];
-              final sortedKeys = chatMap.keys.toList()..sort();
-              for (final k in sortedKeys) {
-                syncedChat.add(ChatMessage.fromJson(Map<String, dynamic>.from(chatMap[k] as Map)));
-              }
-              _chatMessages = syncedChat;
-            }
-
+            _room = GameRoom.fromJson(Map<String, dynamic>.from(val as Map));
+            notifyListeners();
+          } else {
+            _roomDeleted = true;
             notifyListeners();
           }
         });
 
+    // 2. Listen specifically to player updates
+    _playersSubscription = _firebaseService.roomRef(code)
+        .child('players')
+        .onValue
+        .listen((event) {
+          final val = event.snapshot.value;
+          if (val != null) {
+            final playersMap = Map<String, dynamic>.from(val as Map);
+            _players = playersMap.values.map((p) {
+              return Player.fromJson(Map<String, dynamic>.from(p as Map));
+            }).toList();
+            notifyListeners();
+          }
+        });
+
+    // 3. Listen incrementally to new chat messages
+    _chatSubscription = _firebaseService.roomRef(code)
+        .child('chatMessages')
+        .onChildAdded
+        .listen((event) {
+          final val = event.snapshot.value;
+          if (val != null) {
+            final msg = ChatMessage.fromJson(Map<String, dynamic>.from(val as Map));
+            if (!_chatMessages.any((m) => m.id == msg.id)) {
+              _chatMessages.add(msg);
+              if (_chatMessages.length > 50) {
+                _chatMessages.removeAt(0);
+              }
+              notifyListeners();
+            }
+          }
+        });
+
+    // 4. Listen to drawing cleared signals
     _drawingPointsSubscription = _firebaseService.roomRef(code)
         .child('drawingPoints')
         .onValue
@@ -709,6 +874,7 @@ class GameStateController extends ChangeNotifier {
           }
         });
 
+    // 5. Listen to drawing additions
     _drawingPointsAddedSubscription = _firebaseService.roomRef(code)
         .child('drawingPoints')
         .onChildAdded
@@ -718,8 +884,17 @@ class GameStateController extends ChangeNotifier {
           }
           final val = event.snapshot.value;
           if (val != null) {
-            final point = DrawPoint.fromJson(Map<String, dynamic>.from(val as Map));
-            _drawingPoints.add(point);
+            if (val is List) {
+              for (final item in val) {
+                if (item != null) {
+                  final point = DrawPoint.fromJson(Map<String, dynamic>.from(item as Map));
+                  _drawingPoints.add(point);
+                }
+              }
+            } else {
+              final point = DrawPoint.fromJson(Map<String, dynamic>.from(val as Map));
+              _drawingPoints.add(point);
+            }
             notifyListeners();
           }
         });
@@ -728,6 +903,8 @@ class GameStateController extends ChangeNotifier {
   void cleanupFirebase() {
     _cancelTimers();
     _roomSubscription?.cancel();
+    _playersSubscription?.cancel();
+    _chatSubscription?.cancel();
     _drawingPointsSubscription?.cancel();
     _drawingPointsAddedSubscription?.cancel();
     _guessesSubscription?.cancel();
@@ -737,11 +914,14 @@ class GameStateController extends ChangeNotifier {
     _isHost = false;
     _isNetworkGame = false;
     _roomCode = null;
+    _roomDeleted = false;
   }
 
   void _cancelTimers() {
     _gameTimer?.cancel();
     _botDrawTimer?.cancel();
+    _drawingSyncTimer?.cancel();
+    _flushDrawingBuffer();
   }
 
   @override

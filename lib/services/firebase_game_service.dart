@@ -1,8 +1,9 @@
 import 'dart:math';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 class FirebaseGameService {
-  DatabaseReference get _database => FirebaseDatabase.instance.ref();
+  DatabaseReference get _database => FirebaseDatabase.instanceFor(app: Firebase.app(), databaseURL: 'https://scribble-7bcd4-default-rtdb.firebaseio.com/').ref();
 
   // Generate a random 6-character room code (alphanumeric uppercase, excluding confusing characters)
   String generateRoomCode() {
@@ -35,6 +36,11 @@ class FirebaseGameService {
   // Write a new point to the drawing list
   Future<void> addDrawingPoint(String roomCode, Map<String, dynamic> pointData) async {
     await roomRef(roomCode).child('drawingPoints').push().set(pointData);
+  }
+
+  // Push a batch of drawing points in a single write
+  Future<void> addDrawingPointsBatch(String roomCode, List<Map<String, dynamic>> pointsBatch) async {
+    await roomRef(roomCode).child('drawingPoints').push().set(pointsBatch);
   }
 
   // Clear drawing points

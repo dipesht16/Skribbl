@@ -5,6 +5,7 @@ class DrawPoint {
   final double strokeWidth;
   final bool isEraser;
   final bool isStart;
+  final bool isFill; // Indicates if this point is a flood fill action
 
   const DrawPoint({
     required this.x,
@@ -13,6 +14,7 @@ class DrawPoint {
     required this.strokeWidth,
     required this.isEraser,
     this.isStart = false,
+    this.isFill = false,
   });
 
   Map<String, dynamic> toJson() {
@@ -23,17 +25,19 @@ class DrawPoint {
       'strokeWidth': strokeWidth,
       'isEraser': isEraser,
       'isStart': isStart,
+      'isFill': isFill,
     };
   }
 
   factory DrawPoint.fromJson(Map<String, dynamic> json) {
     return DrawPoint(
-      x: (json['x'] as num).toDouble(),
-      y: (json['y'] as num).toDouble(),
-      colorValue: json['colorValue'] as int,
-      strokeWidth: (json['strokeWidth'] as num).toDouble(),
-      isEraser: json['isEraser'] as bool,
+      x: (json['x'] as num? ?? 0.0).toDouble(),
+      y: (json['y'] as num? ?? 0.0).toDouble(),
+      colorValue: json['colorValue'] as int? ?? 0,
+      strokeWidth: (json['strokeWidth'] as num? ?? 4.0).toDouble(),
+      isEraser: json['isEraser'] as bool? ?? false,
       isStart: json['isStart'] as bool? ?? false,
+      isFill: json['isFill'] as bool? ?? false,
     );
   }
 }

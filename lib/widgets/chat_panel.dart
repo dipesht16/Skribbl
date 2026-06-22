@@ -1,19 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../models/chat_message.dart';
 
 class ChatPanel extends StatefulWidget {
   final List<ChatMessage> messages;
-  final Function(String) onMessageSubmitted;
-  final bool isInputEnabled;
-  final String placeholder;
+  final Function(String) onSendMessage;
+  final bool isDrawing;
 
   const ChatPanel({
     super.key,
     required this.messages,
-    required this.onMessageSubmitted,
-    required this.isInputEnabled,
-    this.placeholder = 'Type your guess here...',
+    required this.onSendMessage,
+    required this.isDrawing,
   });
 
   @override
@@ -23,218 +20,199 @@ class ChatPanel extends StatefulWidget {
 class _ChatPanelState extends State<ChatPanel> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final FocusNode _focusNode = FocusNode();
 
   @override
-  void didUpdateWidget(covariant ChatPanel oldWidget) {
+  void didUpdateWidget(ChatPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Auto scroll to bottom when new messages arrive
-    if (oldWidget.messages.length != widget.messages.length) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-          );
-        }
-      });
+    if (widget.messages.length > oldWidget.messages.length) {
+      _scrollToBottom();
     }
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  void _sendMessage() {
+    if (_controller.text.trim().isEmpty) return;
+    widget.onSendMessage(_controller.text.trim());
+    _controller.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFF34495E),
+      child: Column(
+        children: [
+          Expanded(
+            child: Container(
+              color: Colors.white,
+              child: ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(8),
+                itemCount: widget.messages.length,
+                itemBuilder: (context, index) {
+                  final message = widget.messages[index];
+                  return _buildMessageBubble(message);
+                },
+              ),
+            ),
+          ),
+          if (!widget.isDrawing) _buildInputField(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageBubble(ChatMessage message) {
+    Color bgColor;
+    Color textColor;
+    Color nameColor;
+
+    if (message.isCorrectGuess || message.type == ChatMessageType.correctGuesserChat) {
+      bgColor = const Color(0xFFD4EDDA);
+      textColor = const Color(0xFF155724);
+      nameColor = const Color(0xFF28A745);
+    } else if (message.type == ChatMessageType.close) {
+      bgColor = const Color(0xFFFFF3CD);
+      textColor = const Color(0xFF856404);
+      nameColor = const Color(0xFFD35400);
+    } else if (message.type == ChatMessageType.system) {
+      bgColor = const Color(0xFFD1ECF1);
+      textColor = const Color(0xFF0C5460);
+      nameColor = const Color(0xFF2980B9);
+    } else if (message.type == ChatMessageType.like) {
+      bgColor = const Color(0xFFE8F5E9);
+      textColor = const Color(0xFF2E7D32);
+      nameColor = const Color(0xFF4CAF50);
+    } else if (message.type == ChatMessageType.dislike) {
+      bgColor = const Color(0xFFFFEBEE);
+      textColor = const Color(0xFFC62828);
+      nameColor = const Color(0xFFF44336);
+    } else {
+      bgColor = const Color(0xFFF1F3F5);
+      textColor = const Color(0xFF2C3E50);
+      nameColor = const Color(0xFF4A90E2);
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: RichText(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: '${message.senderName}: ',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: nameColor,
+              ),
+            ),
+            TextSpan(
+              text: message.text,
+              style: TextStyle(
+                fontSize: 13,
+                color: textColor,
+                fontStyle: message.type == ChatMessageType.system ? FontStyle.italic : FontStyle.normal,
+                fontWeight: (message.isCorrectGuess ||
+                        message.type == ChatMessageType.correctGuesserChat ||
+                        message.type == ChatMessageType.close ||
+                        message.type == ChatMessageType.like ||
+                        message.type == ChatMessageType.dislike)
+                    ? FontWeight.bold
+                    : FontWeight.normal,
+              ),
+            ),
+            if (message.isCorrectGuess)
+              const TextSpan(
+                text: ' ✓',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF28A745),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            if (message.type == ChatMessageType.like)
+              const TextSpan(
+                text: ' 👍',
+                style: TextStyle(fontSize: 14),
+              ),
+            if (message.type == ChatMessageType.dislike)
+              const TextSpan(
+                text: ' 👎',
+                style: TextStyle(fontSize: 14),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInputField() {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: Color(0xFFE9ECEF), width: 1),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              decoration: InputDecoration(
+                hintText: 'Type your guess...',
+                hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF95A5A6)),
+                filled: true,
+                fillColor: const Color(0xFFF8F9FA),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onSubmitted: (_) => _sendMessage(),
+              textInputAction: TextInputAction.send,
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: _sendMessage,
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: const BoxDecoration(
+                color: Color(0xFF4A90E2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.send, color: Colors.white, size: 18),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
-    _focusNode.dispose();
     super.dispose();
-  }
-
-  void _handleSubmit() {
-    final text = _controller.text.trim();
-    if (text.isNotEmpty) {
-      widget.onMessageSubmitted(text);
-      _controller.clear();
-      // Keep focus on the text field for rapid guessing
-      _focusNode.requestFocus();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black, width: 3.0),
-      ),
-      child: Column(
-        children: [
-          // 1. MESSAGES LIST
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(8.0),
-              itemCount: widget.messages.length,
-              itemBuilder: (context, index) {
-                final message = widget.messages[index];
-                return _buildMessageRow(message);
-              },
-            ),
-          ),
-
-          // 2. INPUT TEXTFIELD
-          Container(
-            padding: const EdgeInsets.all(8.0),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              border: const Border(
-                top: BorderSide(color: Colors.black, width: 3.0),
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8.0),
-                      border: Border.all(color: Colors.black, width: 2.0),
-                    ),
-                    child: TextField(
-                      controller: _controller,
-                      focusNode: _focusNode,
-                      enabled: widget.isInputEnabled,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _handleSubmit(),
-                      decoration: InputDecoration(
-                        hintText: widget.isInputEnabled ? widget.placeholder : 'You cannot draw and guess!',
-                        hintStyle: GoogleFonts.fredoka(color: Colors.grey.shade500, fontSize: 13),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-                        border: InputBorder.none,
-                      ),
-                      style: GoogleFonts.fredoka(fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Container(
-                  decoration: BoxDecoration(
-                    color: widget.isInputEnabled ? Colors.green : Colors.grey,
-                    borderRadius: BorderRadius.circular(8.0),
-                    border: Border.all(color: Colors.black, width: 2.0),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Colors.black,
-                        offset: Offset(0, 2),
-                        blurRadius: 0,
-                      )
-                    ],
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.send, color: Colors.white, size: 18),
-                    onPressed: widget.isInputEnabled ? _handleSubmit : null,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMessageRow(ChatMessage message) {
-    TextStyle textStyle;
-    Color? rowBg;
-    EdgeInsets padding = const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0);
-    Border? border;
-
-    switch (message.type) {
-      case ChatMessageType.correct:
-        textStyle = GoogleFonts.fredoka(
-          fontWeight: FontWeight.w900,
-          color: const Color(0xFF155724),
-          fontSize: 13,
-        );
-        rowBg = const Color(0xFFd4edda);
-        border = Border.all(color: const Color(0xFFc3e6cb), width: 1.0);
-        break;
-
-      case ChatMessageType.close:
-        textStyle = GoogleFonts.fredoka(
-          fontWeight: FontWeight.w900,
-          color: const Color(0xFF856404),
-          fontSize: 13,
-        );
-        rowBg = const Color(0xFFfff3cd);
-        border = Border.all(color: const Color(0xFFffeeba), width: 1.0);
-        break;
-
-      case ChatMessageType.system:
-        textStyle = GoogleFonts.fredoka(
-          fontWeight: FontWeight.w900,
-          color: Colors.blue.shade900,
-          fontSize: 13,
-        );
-        rowBg = Colors.blue.shade50;
-        border = Border.all(color: Colors.blue.shade100, width: 1.0);
-        break;
-
-      case ChatMessageType.chat:
-        textStyle = GoogleFonts.fredoka(
-          fontWeight: FontWeight.w700,
-          color: Colors.black,
-          fontSize: 13,
-        );
-        break;
-    }
-
-    Widget content = RichText(
-      text: TextSpan(
-        style: textStyle,
-        children: [
-          if (message.type == ChatMessageType.chat) ...[
-            TextSpan(
-              text: '${message.senderName}: ',
-              style: GoogleFonts.fredoka(fontWeight: FontWeight.w900, color: Colors.black87),
-            ),
-            TextSpan(text: message.text),
-          ] else if (message.type == ChatMessageType.correct) ...[
-            TextSpan(
-              text: message.senderName,
-              style: GoogleFonts.fredoka(fontWeight: FontWeight.w900),
-            ),
-            const TextSpan(text: ' guessed the word!'),
-          ] else if (message.type == ChatMessageType.close) ...[
-            TextSpan(
-              text: message.senderName,
-              style: GoogleFonts.fredoka(fontWeight: FontWeight.w900),
-            ),
-            const TextSpan(text: ' is close!'),
-          ] else ...[
-            TextSpan(text: message.text),
-          ],
-        ],
-      ),
-    );
-
-    if (rowBg != null) {
-      return Container(
-        margin: const EdgeInsets.only(bottom: 6.0),
-        padding: padding,
-        decoration: BoxDecoration(
-          color: rowBg,
-          borderRadius: BorderRadius.circular(6.0),
-          border: border,
-        ),
-        child: content,
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4.0, left: 8.0, right: 8.0),
-      child: content,
-    );
   }
 }

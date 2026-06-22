@@ -2,7 +2,10 @@ enum ChatMessageType {
   chat,
   correct,
   close,
-  system
+  system,
+  correctGuesserChat,
+  like,
+  dislike
 }
 
 class ChatMessage {
@@ -11,6 +14,8 @@ class ChatMessage {
   final String text;
   final ChatMessageType type;
   final DateTime timestamp;
+
+  bool get isCorrectGuess => type == ChatMessageType.correct;
 
   ChatMessage({
     required this.id,
@@ -32,11 +37,16 @@ class ChatMessage {
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     return ChatMessage(
-      id: json['id'] as String,
-      senderName: json['senderName'] as String,
-      text: json['text'] as String,
-      type: ChatMessageType.values.firstWhere((e) => e.name == json['type']),
-      timestamp: DateTime.parse(json['timestamp'] as String),
+      id: json['id'] as String? ?? '',
+      senderName: json['senderName'] as String? ?? 'Someone',
+      text: json['text'] as String? ?? '',
+      type: ChatMessageType.values.firstWhere(
+        (e) => e.name == json['type'],
+        orElse: () => ChatMessageType.chat,
+      ),
+      timestamp: json['timestamp'] != null
+          ? DateTime.tryParse(json['timestamp'] as String) ?? DateTime.now()
+          : DateTime.now(),
     );
   }
 }

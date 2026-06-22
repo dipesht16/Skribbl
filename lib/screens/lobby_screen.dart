@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -26,22 +27,39 @@ class LobbyScreen extends StatefulWidget {
 
 class _LobbyScreenState extends State<LobbyScreen> {
   final TextEditingController _customWordsController = TextEditingController();
+  Timer? _debounceTimer;
 
   @override
   void initState() {
     super.initState();
     _customWordsController.text = widget.controller.room.customWords;
     if (widget.isFirebaseHost) {
-      _customWordsController.addListener(() {
-        widget.controller.setLobbySettings(customWords: _customWordsController.text);
-      });
+      _customWordsController.addListener(_onCustomWordsChanged);
     }
 
     widget.controller.addListener(_onControllerChanged);
   }
 
+  void _onCustomWordsChanged() {
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      if (mounted && widget.isFirebaseHost) {
+        widget.controller.setLobbySettings(customWords: _customWordsController.text);
+      }
+    });
+  }
+
   void _onControllerChanged() {
     if (!mounted) return;
+    if (widget.controller.roomDeleted) {
+      widget.controller.removeListener(_onControllerChanged);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Host closed the lobby.')),
+      );
+      Navigator.of(context).pop();
+      return;
+    }
+
     if (widget.controller.room.status != GameStatus.lobby) {
       widget.controller.removeListener(_onControllerChanged);
       Navigator.of(context).pushReplacement(
@@ -53,52 +71,85 @@ class _LobbyScreenState extends State<LobbyScreen> {
           ),
         ),
       );
+    } else if (!widget.isFirebaseHost) {
+      // Sync joiner's custom words controller text
+      final remoteWords = widget.controller.room.customWords;
+      if (_customWordsController.text != remoteWords) {
+        _customWordsController.text = remoteWords;
+      }
     }
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onControllerChanged);
+    _debounceTimer?.cancel();
     _customWordsController.dispose();
+
+    // Cleanup Firebase network resources if leaving the lobby phase
+    final controller = widget.controller;
+    if (controller.isFirebaseGame && controller.room.status == GameStatus.lobby) {
+      final code = widget.roomCode;
+      if (widget.isFirebaseHost) {
+        FirebaseGameService().roomRef(code).remove();
+      } else {
+        FirebaseGameService().removePlayer(code, controller.localPlayer.id);
+      }
+      controller.cleanupFirebase();
+    }
+
     super.dispose();
   }
 
   void _onStartPressed() {
+    if (_debounceTimer?.isActive ?? false) {
+      _debounceTimer!.cancel();
+      widget.controller.setLobbySettings(customWords: _customWordsController.text);
+    }
     widget.controller.startGame();
   }
 
   @override
   Widget build(BuildContext context) {
-    final room = widget.controller.room;
-    final players = widget.controller.players;
-    final inviteCode = widget.roomCode;
-    final bool isPortrait = MediaQuery.of(context).size.width < 600;
-
     return ListenableBuilder(
       listenable: widget.controller,
       builder: (context, _) {
+        final room = widget.controller.room;
+        final players = widget.controller.players;
+        final inviteCode = widget.roomCode;
+        final bool isPortrait = MediaQuery.of(context).size.width < MediaQuery.of(context).size.height;
+
         return Scaffold(
           backgroundColor: const Color(0xFF133c64),
           appBar: AppBar(
             backgroundColor: Colors.transparent,
             elevation: 0,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () async {
-                final controller = widget.controller;
-                if (controller.isFirebaseGame) {
-                  final code = widget.roomCode;
-                  if (widget.isFirebaseHost) {
-                    await FirebaseGameService().roomRef(code).remove();
-                  } else {
-                    await FirebaseGameService().removePlayer(code, controller.localPlayer.id);
-                  }
-                  controller.cleanupFirebase();
-                }
-                if (context.mounted) {
-                  Navigator.of(context).pop();
-                }
-              },
+            leading: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8.0),
+                  border: Border.all(color: Colors.black, width: 2.5),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black,
+                      offset: Offset(0, 2),
+                      blurRadius: 0,
+                    )
+                  ],
+                ),
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.arrow_back, color: Colors.black, size: 20),
+                  onPressed: () {
+                    final navigator = Navigator.of(context);
+                    if (navigator.canPop()) {
+                      navigator.pop();
+                    }
+                  },
+                ),
+              ),
             ),
             title: Text(
               'PRIVATE ROOM LOBBY',
@@ -106,6 +157,10 @@ class _LobbyScreenState extends State<LobbyScreen> {
             ),
           ),
           body: SafeArea(
+            top: false,
+            bottom: false,
+            left: false,
+            right: false,
             child: isPortrait
                 ? SingleChildScrollView(
                     padding: const EdgeInsets.all(12.0),
@@ -239,7 +294,17 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
   Widget _buildSettingsCard(GameRoom room, String inviteCode) {
     final encodedCode = inviteCode;
-    final inviteLink = 'http://skribbl-clone.app/join?code=$encodedCode';
+    // Dynamic invite link based on current host
+    String inviteLink;
+    try {
+      final currentUri = Uri.base;
+      final portSuffix = (currentUri.port != 80 && currentUri.port != 443 && currentUri.port != 0)
+          ? ':${currentUri.port}'
+          : '';
+      inviteLink = '${currentUri.scheme}://${currentUri.host}$portSuffix/?code=$encodedCode';
+    } catch (_) {
+      inviteLink = 'skribbl-clone://join?code=$encodedCode';
+    }
     final bool isPortrait = MediaQuery.of(context).size.width < 600;
 
     final content = Column(
@@ -316,21 +381,35 @@ class _LobbyScreenState extends State<LobbyScreen> {
         ),
         const SizedBox(height: 16),
 
-        // Round selection slider
+        // Round selection dropdown
         Text(
           'ROUNDS: ${room.rounds}',
           style: GoogleFonts.fredoka(fontWeight: FontWeight.w900, fontSize: 13),
         ),
-        Slider(
-          value: room.rounds.toDouble(),
-          min: 2,
-          max: 10,
-          divisions: 8,
-          activeColor: Colors.amber,
-          inactiveColor: Colors.grey.shade300,
-          onChanged: widget.isFirebaseHost ? (val) {
-            widget.controller.setLobbySettings(rounds: val.toInt());
-          } : null,
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.black, width: 2.0),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<int>(
+              value: room.rounds,
+              isExpanded: true,
+              items: [2, 4, 6, 8, 10].map<DropdownMenuItem<int>>((int val) {
+                return DropdownMenuItem<int>(
+                  value: val,
+                  child: Text('$val rounds'),
+                );
+              }).toList(),
+              onChanged: widget.isFirebaseHost ? (val) {
+                if (val != null) {
+                  widget.controller.setLobbySettings(rounds: val);
+                }
+              } : null,
+            ),
+          ),
         ),
         const SizedBox(height: 12),
 
@@ -390,6 +469,15 @@ class _LobbyScreenState extends State<LobbyScreen> {
               border: InputBorder.none,
             ),
             style: GoogleFonts.fredoka(fontSize: 13, fontWeight: FontWeight.bold),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Words must be <= 12 characters each',
+          style: GoogleFonts.fredoka(
+            color: Colors.red.shade700,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
           ),
         ),
       ],

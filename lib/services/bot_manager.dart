@@ -110,7 +110,7 @@ class BotManager {
     // DRAWING PRESETS
     if (cleanWord == 'house') {
       // 1. Square base (black)
-      final wallColor = Colors.black.value;
+      final wallColor = Colors.black.toARGB32();
       addLine([
         Offset(0.3, 0.7),
         Offset(0.7, 0.7),
@@ -124,7 +124,7 @@ class BotManager {
         Offset(0.3, 0.4),
         Offset(0.5, 0.2),
         Offset(0.7, 0.4),
-      ], Colors.red.value, 4.0);
+      ], Colors.red.toARGB32(), 4.0);
 
       // 3. Door (brown)
       addLine([
@@ -132,7 +132,7 @@ class BotManager {
         Offset(0.46, 0.55),
         Offset(0.54, 0.55),
         Offset(0.54, 0.7),
-      ], Colors.brown.value, 4.0);
+      ], Colors.brown.toARGB32(), 4.0);
 
       // 4. Window (blue)
       addLine([
@@ -141,10 +141,10 @@ class BotManager {
         Offset(0.43, 0.52),
         Offset(0.35, 0.52),
         Offset(0.35, 0.46),
-      ], Colors.blue.value, 3.0);
+      ], Colors.blue.toARGB32(), 3.0);
     } 
     else if (cleanWord == 'sun') {
-      final yellow = Colors.orangeAccent.value;
+      final yellow = Colors.orangeAccent.toARGB32();
       // 1. Center Circle
       final List<Offset> circle = [];
       const double cx = 0.5;
@@ -166,8 +166,8 @@ class BotManager {
       }
     } 
     else if (cleanWord == 'car') {
-      final blue = Colors.blue.value;
-      final black = Colors.black.value;
+      final blue = Colors.blue.toARGB32();
+      final black = Colors.black.toARGB32();
       // 1. Lower Body
       addLine([
         Offset(0.2, 0.6),
@@ -204,10 +204,10 @@ class BotManager {
         Offset(0.52, 0.5),
         Offset(0.48, 0.5),
         Offset(0.48, 0.75),
-      ], Colors.brown.value, 6.0);
+      ], Colors.brown.toARGB32(), 6.0);
 
       // 2. Green Foliage (cloud shape)
-      final green = Colors.green.value;
+      final green = Colors.green.toARGB32();
       addLine([
         Offset(0.5, 0.25),
         Offset(0.42, 0.3),
@@ -221,8 +221,8 @@ class BotManager {
       ], green, 6.0);
     } 
     else if (cleanWord == 'smiley') {
-      final yellow = Colors.orange.value;
-      final black = Colors.black.value;
+      final yellow = Colors.orange.toARGB32();
+      final black = Colors.black.toARGB32();
       // Face circle
       final List<Offset> circle = [];
       for (int i = 0; i <= 24; i++) {
@@ -245,7 +245,7 @@ class BotManager {
       addLine(smile, black, 4.0);
     } 
     else if (cleanWord == 'cloud') {
-      final gray = Colors.grey.shade400.value;
+      final gray = Colors.grey.shade400.toARGB32();
       addLine([
         Offset(0.35, 0.5),
         Offset(0.3, 0.44),
@@ -260,7 +260,7 @@ class BotManager {
       ], gray, 5.0);
     }
     else if (cleanWord == 'star') {
-      final gold = Colors.amber.value;
+      final gold = Colors.amber.toARGB32();
       addLine([
         Offset(0.5, 0.2),
         Offset(0.58, 0.38),
@@ -276,8 +276,8 @@ class BotManager {
       ], gold, 4.0);
     }
     else if (cleanWord == 'umbrella') {
-      final purple = Colors.purple.value;
-      final black = Colors.black.value;
+      final purple = Colors.purple.toARGB32();
+      final black = Colors.black.toARGB32();
       // Canopy arch
       final List<Offset> canopy = [];
       for (int i = 0; i <= 12; i++) {
@@ -297,7 +297,7 @@ class BotManager {
       ], black, 4.0);
     }
     else if (cleanWord == 'balloon') {
-      final red = Colors.red.value;
+      final red = Colors.red.toARGB32();
       // Balloon body oval
       final List<Offset> oval = [];
       for (int i = 0; i <= 20; i++) {
@@ -313,7 +313,7 @@ class BotManager {
         Offset(0.48, 0.65),
         Offset(0.52, 0.71),
         Offset(0.5, 0.78),
-      ], Colors.grey.value, 2.0);
+      ], Colors.grey.toARGB32(), 2.0);
     }
     else {
       // PROCEDURAL SCRIBBLING FOR GENERIC WORDS (Draws a spiral/doodle so it feels active!)
@@ -321,7 +321,7 @@ class BotManager {
       final center = Offset(0.5, 0.45);
       final double maxRadius = 0.22;
       final int steps = 60;
-      final color = Colors.deepPurple.value;
+      final color = Colors.deepPurple.toARGB32();
 
       for (int i = 0; i < steps; i++) {
         double theta = (i * 6 * pi) / steps;

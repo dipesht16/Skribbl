@@ -19,11 +19,12 @@ class GameRoom {
   final List<String> wordChoices;
   final String? currentDrawerId;
   final String customWords;
+  final List<String> drawerOrder;
 
   const GameRoom({
     required this.id,
     required this.hostId,
-    this.rounds = 3,
+    this.rounds = 2,
     this.currentRound = 1,
     this.drawTime = 80,
     this.timeRemaining = 80,
@@ -33,6 +34,7 @@ class GameRoom {
     this.wordChoices = const [],
     this.currentDrawerId,
     this.customWords = '',
+    this.drawerOrder = const [],
   });
 
   GameRoom copyWith({
@@ -48,6 +50,7 @@ class GameRoom {
     List<String>? wordChoices,
     String? currentDrawerId,
     String? customWords,
+    List<String>? drawerOrder,
   }) {
     return GameRoom(
       id: id ?? this.id,
@@ -62,6 +65,7 @@ class GameRoom {
       wordChoices: wordChoices ?? this.wordChoices,
       currentDrawerId: currentDrawerId ?? this.currentDrawerId,
       customWords: customWords ?? this.customWords,
+      drawerOrder: drawerOrder ?? this.drawerOrder,
     );
   }
 
@@ -79,23 +83,28 @@ class GameRoom {
       'wordChoices': wordChoices,
       'currentDrawerId': currentDrawerId,
       'customWords': customWords,
+      'drawerOrder': drawerOrder,
     };
   }
 
   factory GameRoom.fromJson(Map<String, dynamic> json) {
     return GameRoom(
-      id: json['id'] as String,
-      hostId: json['hostId'] as String,
-      rounds: json['rounds'] as int,
-      currentRound: json['currentRound'] as int,
-      drawTime: json['drawTime'] as int,
-      timeRemaining: json['timeRemaining'] as int,
-      status: GameStatus.values.firstWhere((e) => e.name == json['status']),
-      currentWord: json['currentWord'] as String,
-      currentHint: json['currentHint'] as String,
-      wordChoices: List<String>.from(json['wordChoices'] as List),
+      id: json['id'] as String? ?? '',
+      hostId: json['hostId'] as String? ?? '',
+      rounds: json['rounds'] as int? ?? 2,
+      currentRound: json['currentRound'] as int? ?? 1,
+      drawTime: json['drawTime'] as int? ?? 80,
+      timeRemaining: json['timeRemaining'] as int? ?? 80,
+      status: GameStatus.values.firstWhere(
+        (e) => e.name == json['status'],
+        orElse: () => GameStatus.lobby,
+      ),
+      currentWord: json['currentWord'] as String? ?? '',
+      currentHint: json['currentHint'] as String? ?? '',
+      wordChoices: json['wordChoices'] != null ? List<String>.from(json['wordChoices'] as List) : const [],
       currentDrawerId: json['currentDrawerId'] as String?,
       customWords: json['customWords'] as String? ?? '',
+      drawerOrder: json['drawerOrder'] != null ? List<String>.from(json['drawerOrder'] as List) : const [],
     );
   }
 }

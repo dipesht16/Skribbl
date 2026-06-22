@@ -5,6 +5,7 @@ class Player {
   final String name;
   final int score;
   final int lastTurnScore;
+  final int streak;
   final bool isDrawing;
   final bool hasGuessed;
   final bool isHost;
@@ -16,6 +17,7 @@ class Player {
     required this.name,
     this.score = 0,
     this.lastTurnScore = 0,
+    this.streak = 0,
     this.isDrawing = false,
     this.hasGuessed = false,
     this.isHost = false,
@@ -28,6 +30,7 @@ class Player {
     String? name,
     int? score,
     int? lastTurnScore,
+    int? streak,
     bool? isDrawing,
     bool? hasGuessed,
     bool? isHost,
@@ -39,6 +42,7 @@ class Player {
       name: name ?? this.name,
       score: score ?? this.score,
       lastTurnScore: lastTurnScore ?? this.lastTurnScore,
+      streak: streak ?? this.streak,
       isDrawing: isDrawing ?? this.isDrawing,
       hasGuessed: hasGuessed ?? this.hasGuessed,
       isHost: isHost ?? this.isHost,
@@ -53,6 +57,7 @@ class Player {
       'name': name,
       'score': score,
       'lastTurnScore': lastTurnScore,
+      'streak': streak,
       'isDrawing': isDrawing,
       'hasGuessed': hasGuessed,
       'isHost': isHost,
@@ -63,15 +68,18 @@ class Player {
 
   factory Player.fromJson(Map<String, dynamic> json) {
     return Player(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      score: json['score'] as int,
-      lastTurnScore: json['lastTurnScore'] as int,
-      isDrawing: json['isDrawing'] as bool,
-      hasGuessed: json['hasGuessed'] as bool,
-      isHost: json['isHost'] as bool,
-      isBot: json['isBot'] as bool,
-      avatar: Avatar.fromJson(json['avatar'] as Map<String, dynamic>),
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? 'Player',
+      score: json['score'] as int? ?? 0,
+      lastTurnScore: json['lastTurnScore'] as int? ?? 0,
+      streak: json['streak'] as int? ?? 0,
+      isDrawing: json['isDrawing'] as bool? ?? false,
+      hasGuessed: json['hasGuessed'] as bool? ?? false,
+      isHost: json['isHost'] as bool? ?? false,
+      isBot: json['isBot'] as bool? ?? false,
+      avatar: json['avatar'] != null
+          ? Avatar.fromJson(Map<String, dynamic>.from(json['avatar'] as Map))
+          : Avatar.random(),
     );
   }
 }

@@ -1,0 +1,25 @@
+{
+  "rules": {
+    "rooms": {
+      ".indexOn": "roomCode",
+      ".read": true,
+      ".write": true,
+      "$roomId": {
+        ".read": true,
+        ".write": true,
+        "players": {
+          ".read": true,
+          ".write": true,
+          "$playerId": {
+            ".read": true,
+            ".write": true
+          }
+        },
+        "messages": {
+          ".read": true,
+          ".write": true
+        }
+      }
+    }
+  }
+}

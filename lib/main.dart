@@ -1,16 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/services.dart';
 import 'services/game_state_controller.dart';
 import 'screens/landing_screen.dart';
+import 'firebase_options.dart';
+
+late final Future<void> firebaseInitFuture;
 
 void main() async {
-  // Ensure Flutter binding is initialized
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   
-  // Initialize Firebase
-  await Firebase.initializeApp();
-  
+  // Disable runtime network fetches for Google Fonts to load fonts offline instantly
+  GoogleFonts.config.allowRuntimeFetching = false;
+
+  // Initialize Firebase in the background so it doesn't block the first frame render
+  firebaseInitFuture = Future(() async {
+    try {
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+      }
+    } catch (e) {
+      debugPrint("Firebase initialization failed/already done: $e");
+    }
+  });
+
   final gameController = GameStateController();
   runApp(MyApp(controller: gameController));
 }
